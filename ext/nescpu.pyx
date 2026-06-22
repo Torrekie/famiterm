@@ -32,9 +32,15 @@ def run(cpu):
     cdef unsigned char operand
     cdef unsigned short address
     cdef unsigned char value
+    cdef unsigned int start_ic = ic
+    cdef unsigned int max_instructions = cpu.max_instructions_per_run
+    cdef bint instruction_budget_exhausted = False
 
     # Instruction loop
     while 1:
+        if max_instructions and ic - start_ic >= max_instructions:
+            instruction_budget_exhausted = True
+            break
         # Read opcode
         ic += 1
         opc = rom[pc - 0x8000]
@@ -109,8 +115,21 @@ def run(cpu):
         # NOP
         elif opc == 0xea:
             continue
-        # RTI/BRK
-        elif opc in (0x00, 0x40):
+        # BRK
+        elif opc == 0x00:
+            break
+        # RTI
+        elif opc == 0x40:
+            sp += 1
+            value = ram[0x0100 | sp]
+            n = (value & 0x80) != 0
+            v = (value & 0x40) != 0
+            z = (value & 0x02) != 0
+            c = (value & 0x01) != 0
+            sp += 1
+            pc = ram[0x0100 | sp]
+            sp += 1
+            pc |= ram[0x0100 | sp] << 8
             break
         # RTS
         elif opc == 0x60:
@@ -723,6 +742,9 @@ def run(cpu):
 
     # Set the value back to the CPU instance
     set_cpu_attributes(cpu, pc, a, x, y, sp, n, z, c, v, ic)
+
+    if instruction_budget_exhausted:
+        return 0x100
 
     # Except RTI or JMP
     if opc not in (0x40, 0x4c):
